@@ -41,8 +41,8 @@ import com.slim.device.settings.ScreenOffGesture;
 
 import com.android.internal.os.DeviceKeyHandler;
 import com.android.internal.util.ArrayUtils;
-import com.android.internal.util.gzosp.ActionConstants;
-import com.android.internal.util.gzosp.Action;
+import com.android.internal.util.slim.device.ActionConstants;
+import com.android.internal.util.slim.device.Action;
 
 public class KeyHandler implements DeviceKeyHandler {
 
@@ -86,7 +86,6 @@ public class KeyHandler implements DeviceKeyHandler {
     private Context mGestureContext = null;
     private EventHandler mEventHandler;
     private SensorManager mSensorManager;
-    private Sensor mProximitySensor;
     private Vibrator mVibrator;
     WakeLock mProximityWakeLock;
 
@@ -98,7 +97,6 @@ public class KeyHandler implements DeviceKeyHandler {
         mNotificationManager
                 = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         mSensorManager = (SensorManager) context.getSystemService(Context.SENSOR_SERVICE);
-        mProximitySensor = mSensorManager.getDefaultSensor(Sensor.TYPE_PROXIMITY);
         mProximityWakeLock = mPowerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,
                 "ProximityWakeLock");
 
@@ -189,6 +187,21 @@ public class KeyHandler implements DeviceKeyHandler {
         }
     }
 
+     private SensorEventListener mProximitySensor = new SensorEventListener() {
+        @Override
+        public void onSensorChanged(SensorEvent event) {
+            mProxyIsNear = event.values[0] < mSensor.getMaximumRange();
+            if (DEBUG) Log.d(TAG, "mProxyIsNear = " + mProxyIsNear);
+            if(Utils.fileWritable(FPC_CONTROL_PATH)) {
+                Utils.writeValue(FPC_CONTROL_PATH, mProxyIsNear ? "1" : "0");
+        }
+     }
+
+    @Override
+        public void onAccuracyChanged(Sensor sensor, int accuracy) {
+      }
+    };
+
     private void setZenMode(int mode) {
         mNotificationManager.setZenMode(mode, null, TAG);
         if (mVibrator != null) {
@@ -226,7 +239,6 @@ public class KeyHandler implements DeviceKeyHandler {
             Message msg = getMessageForKeyEvent(event);
             if (scanCode < MODE_TOTAL_SILENCE && mProximitySensor != null) {
                 mEventHandler.sendMessageDelayed(msg, 200);
-                processEvent(event);
             } else {
                 mEventHandler.sendMessage(msg);
             }
@@ -240,29 +252,4 @@ public class KeyHandler implements DeviceKeyHandler {
         return msg;
     }
 
-    private void processEvent(final KeyEvent keyEvent) {
-        mProximityWakeLock.acquire();
-        mSensorManager.registerListener(new SensorEventListener() {
 
-            @Override
-            public void onSensorChanged(SensorEvent event) {
-                mProximityWakeLock.release();
-                mSensorManager.unregisterListener(this);
-                if (!mEventHandler.hasMessages(GESTURE_REQUEST)) {
-                    // The sensor took to long, ignoring.
-                    return;
-                }
-                mEventHandler.removeMessages(GESTURE_REQUEST);
-                if (event.values[0] == mProximitySensor.getMaximumRange()) {
-                    Message msg = getMessageForKeyEvent(keyEvent);
-                    mEventHandler.sendMessage(msg);
-                }
-            }
-
-            @Override
-            public void onAccuracyChanged(Sensor sensor, int accuracy) {}
-
-        }, mProximitySensor, SensorManager.SENSOR_DELAY_FASTEST);
-    }
-
-}
